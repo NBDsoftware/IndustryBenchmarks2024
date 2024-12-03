@@ -341,31 +341,6 @@ def clean_results(json_files: list[str]) -> None:
                     print("Can't find results directory, skipping")
                     continue
 
-            structural_analysis_data = results["unit_results"][proto_key]["outputs"][
-                "structural_analysis"
-            ]
-
-            # save structural analysis data
-            print("Saving structural analysis data")
-            np.savez_compressed(
-                results_dir / "structural_analysis_data.npz",
-                protein_RMSD=np.asarray(
-                    structural_analysis_data["protein_RMSD"], dtype=np.float32
-                ),
-                ligand_RMSD=np.asarray(
-                    structural_analysis_data["ligand_RMSD"], dtype=np.float32
-                ),
-                ligand_wander=np.asarray(
-                    structural_analysis_data["ligand_wander"], dtype=np.float32
-                ),
-                protein_2D_RMSD=np.asarray(
-                    structural_analysis_data["protein_2D_RMSD"], dtype=np.float32
-                ),
-                time_ps=np.asarray(
-                    structural_analysis_data["time(ps)"], dtype=np.int32
-                ),
-            )
-
             # remove structural_analysis data stuffed into unit results
             del results["unit_results"][proto_key]["outputs"]["structural_analysis"]
 
@@ -377,7 +352,12 @@ def clean_results(json_files: list[str]) -> None:
             outfile = results_dir / "energy_replica_state.npz"
             out_traj = results_dir / "out"
             print("Subsampling trajectory and saving energy data")
-            extract_data(simulation, checkpoint, hybrid_pdb, outfile, out_traj)
+            
+            # If simulation file doesn't exist, skip
+            if not simulation.exists():
+                print(f"Simulation file {simulation} not found, skipping data extraction")
+            else:
+                extract_data(simulation, checkpoint, hybrid_pdb, outfile, out_traj)
 
             # remove structural_analysis data stuffed into protocol_result
             # and remove ligand + pdb
@@ -393,9 +373,17 @@ def clean_results(json_files: list[str]) -> None:
 
             # Now we delete files we don't need anymore
             print("Deleting trajectory files")
-            os.remove(simulation)
-            os.remove(results_dir / checkpoint)
-            os.remove(results_dir / "structural_analysis.json")
+            # If the simulation file exists, we can delete it
+            if simulation.exists():
+                os.remove(simulation)
+                
+            # Check the file exists before removing it
+            if os.path.exists(results_dir / checkpoint):
+                os.remove(results_dir / checkpoint)
+            
+            # Check the file exists before removing it
+            if os.path.exists(results_dir / "ligand.pdb"):
+                os.remove(results_dir / "structural_analysis.json")
 
             print(f"Done with {json_file}")
             total_files_cleaned += 1
