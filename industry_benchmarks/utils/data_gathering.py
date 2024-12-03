@@ -21,7 +21,7 @@ from openff.units import unit
 # define all the result files we want to collect
 RESULT_FILES = [
     # data files
-    "structural_analysis_data.npz",
+    "structural_analysis.npz",
     "energy_replica_state.npz",
     "simulation_real_time_analysis.yaml",
     "info.yaml",
