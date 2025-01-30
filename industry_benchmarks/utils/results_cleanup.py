@@ -269,20 +269,8 @@ def clean_results(json_files: list[str]) -> None:
                 print(f"{json_file} is an input json, skipping")
                 continue
 
-            # Check to see if we have already cleaned  up this result
-            result_key = next(k for k in results["protocol_result"]["data"].keys())
-            if (
-                "structural_analysis"
-                in results["protocol_result"]["data"][result_key][0]["outputs"]
-            ):
-                print("Cleaning up file")
-            else:
-                print("Skipping file, already cleaned")
-                continue
-
-            # Check to make sure we don't have more than one proto result
+            # Check the number of protocol unit results
             # We might have ProtocolUnitResult-* and ProtocolUnitFailure-*
-            # We only handle the case where we have one ProtocolUnitResult
             protocol_unit_result_count = len(
                 [
                     k
@@ -290,13 +278,12 @@ def clean_results(json_files: list[str]) -> None:
                     if k.startswith("ProtocolUnitResult")
                 ]
             )
+            
+            print(f"Found {protocol_unit_result_count} protocol unit results")
 
             # Check to make sure we don't just have failures
             # if all failures, tell user to re-run
-            if protocol_unit_result_count != 1:
-                print("More than one ProtocolUnitResult, skipping")
-                continue
-            elif protocol_unit_result_count == 0:
+            if protocol_unit_result_count == 0:
                 print("All protocol units failed, skipping cleaning")
                 print(f"{json_file} failed to run, traceback and exception below \n")
                 proto_failures = [
@@ -310,80 +297,89 @@ def clean_results(json_files: list[str]) -> None:
                     print(results["unit_results"][proto_failure]["exception"])
                     print("\n")
                 continue
+            
+            # Check the result keys one by one - each key corresponds to one protocol unit
+            result_keys = [k for k in results["protocol_result"]["data"].keys()]
+            
+            for result_key in result_keys:
+                
+                # Get the protocol key for this result
+                proto_key = results["protocol_result"]["data"][result_key][0]["_key"]
+                
+                # Check if this protocol unit has already been cleaned
+                if (
+                    "structural_analysis"
+                    in results["protocol_result"]["data"][result_key][0]["outputs"]
+                ):
+                    print(f"Cleaning up protocol unit {proto_key}")
+                else:
+                    print(f"Skipping protocol unit {proto_key}, already cleaned")
+                    continue
 
-            # get the name of the key which is a gufe token
-            # for the only ProtocolUnitResult-* in unit_results
-            # this means we can grab the first that matches since there is only
-            # one ProtocolUnitResult-*
-            proto_key = next(
-                k
-                for k in results["unit_results"].keys()
-                if k.startswith("ProtocolUnitResult")
-            )
-
-            results_dir = (
-                Path(results["unit_results"][proto_key]["outputs"]["nc"]["path"])
-                .resolve()
-                .parent
-            )
-            # if the dir doesn't exist, we should try and fix it
-            if not results_dir.is_dir():
-                print("Fixing path to results dir")
-                # Depending on the relative location to the result dir, we might have
-                # to fix a duplicate folder, see this post for more details
-                # https://github.com/OpenFreeEnergy/IndustryBenchmarks2024/pull/83#discussion_r1689003616
-                results_dir = remove_first_reversed_sequential_duplicate_from_path(
-                    results_dir
+                results_dir = (
+                    Path(results["unit_results"][proto_key]["outputs"]["nc"]["path"])
+                    .resolve()
+                    .parent
                 )
+                
+                # if the dir doesn't exist, we should try and fix it
+                if not results_dir.is_dir():
+                    print("Fixing path to results dir")
+                    # Depending on the relative location to the result dir, we might have
+                    # to fix a duplicate folder, see this post for more details
+                    # https://github.com/OpenFreeEnergy/IndustryBenchmarks2024/pull/83#discussion_r1689003616
+                    results_dir = remove_first_reversed_sequential_duplicate_from_path(
+                        results_dir
+                    )
 
                 # Now we should check if the dir exists
                 if not results_dir.is_dir():
                     print("Can't find results directory, skipping")
                     continue
-
-            # remove structural_analysis data stuffed into unit results
-            del results["unit_results"][proto_key]["outputs"]["structural_analysis"]
-
-            # Now we sub sample the traj and save reporter data
-            simulation = results_dir / "simulation.nc"
-            checkpoint = Path("checkpoint.chk")
-            hybrid_pdb = results_dir / "hybrid_system.pdb"
-            # TODO better name?
-            outfile = results_dir / "energy_replica_state.npz"
-            out_traj = results_dir / "out"
-            print("Subsampling trajectory and saving energy data")
             
-            # If simulation file doesn't exist, skip
-            if not simulation.exists():
-                print(f"Simulation file {simulation} not found, skipping data extraction")
-            else:
-                extract_data(simulation, checkpoint, hybrid_pdb, outfile, out_traj)
+                # remove structural_analysis data stuffed into unit results
+                del results["unit_results"][proto_key]["outputs"]["structural_analysis"]
 
-            # remove structural_analysis data stuffed into protocol_result
-            # and remove ligand + pdb
-            # this data is duped in structural_analysis_data.npz
-            print("Shrinking result JSON")
-            del results["protocol_result"]["data"][result_key][0]["outputs"][
-                "structural_analysis"
-            ]
+                # Now we sub sample the traj and save reporter data
+                simulation = results_dir / "simulation.nc"
+                checkpoint = Path("checkpoint.chk")
+                hybrid_pdb = results_dir / "hybrid_system.pdb"
+                # TODO better name?
+                outfile = results_dir / "energy_replica_state.npz"
+                out_traj = results_dir / "out"
+                print("Subsampling trajectory and saving energy data")
+            
+                # If simulation file doesn't exist, skip
+                if not simulation.exists():
+                    print(f"Simulation file {simulation} not found, skipping data extraction")
+                else:
+                    extract_data(simulation, checkpoint, hybrid_pdb, outfile, out_traj)
+                    
+                # remove structural_analysis data stuffed into protocol_result
+                # and remove ligand + pdb
+                # this data is duped in structural_analysis_data.npz
+                print("Shrinking result JSON")
+                del results["protocol_result"]["data"][result_key][0]["outputs"][
+                    "structural_analysis"
+                ]
 
-            print("Saving JSON")
-            with open(json_file, "w") as f:
-                json.dump(results, f)
+                print("Saving JSON")
+                with open(json_file, "w") as f:
+                    json.dump(results, f)
 
-            # Now we delete files we don't need anymore
-            print("Deleting trajectory files")
-            # If the simulation file exists, we can delete it
-            if simulation.exists():
-                os.remove(simulation)
+                # Now we delete files we don't need anymore
+                print("Deleting trajectory files")
+                # If the simulation file exists, we can delete it
+                if simulation.exists():
+                    os.remove(simulation)
+                    
+                # Check the file exists before removing it
+                if os.path.exists(results_dir / checkpoint):
+                    os.remove(results_dir / checkpoint)
                 
-            # Check the file exists before removing it
-            if os.path.exists(results_dir / checkpoint):
-                os.remove(results_dir / checkpoint)
-            
-            # Check the file exists before removing it
-            if os.path.exists(results_dir / "ligand.pdb"):
-                os.remove(results_dir / "structural_analysis.json")
+                # Check the file exists before removing it
+                if os.path.exists(results_dir / "ligand.pdb"):
+                    os.remove(results_dir / "structural_analysis.json")
 
             print(f"Done with {json_file}")
             total_files_cleaned += 1
