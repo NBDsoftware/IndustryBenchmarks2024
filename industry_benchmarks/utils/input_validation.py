@@ -66,6 +66,7 @@ def run_md(dag):
     default=None,
     help="Path to the prepared cofactors SDF file (optional)",
 )
+
 def run_inputs(pdb, cofactors):
     """
     Validate input files by running a short MD simulation
@@ -77,6 +78,8 @@ def run_inputs(pdb, cofactors):
     cofactors : Optional[pathlib.Path]
       A Path to an SDF file containing the system's cofactors.
     """
+    print(f"Creating Solvent and Protein components from {pdb}")
+    
     # Create the solvent and protein components
     solv = openfe.SolventComponent()
     prot = openfe.ProteinComponent.from_pdb_file(str(pdb))
@@ -98,6 +101,8 @@ def run_inputs(pdb, cofactors):
         for cofactor, entry in zip(cofactors, string.ascii_lowercase):
             components_dict[entry] = cofactor
 
+    print("Creating the ChemicalSystem and Protocol")
+    
     # Create the ChemicalSystem
     system = openfe.ChemicalSystem(components_dict)
 
@@ -105,8 +110,11 @@ def run_inputs(pdb, cofactors):
     settings = get_settings()
     protocol = PlainMDProtocol(settings=settings)
 
+    print("Creating the DAG")
     # Now create the DAG and run it
     dag = protocol.create(stateA=system, stateB=system, mapping=None)
+    
+    print("Running the DAG")
     run_md(dag)
 
 
