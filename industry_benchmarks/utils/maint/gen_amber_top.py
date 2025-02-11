@@ -7,7 +7,7 @@ from pathlib import Path
 import argparse
 import os
 
-def main(input_pdb, force_field, output_folder):
+def main(input_pdb, force_fields, output_folder, debug):
     
     # Check input pdb exists
     if not os.path.exists(input_pdb):
@@ -23,6 +23,9 @@ def main(input_pdb, force_field, output_folder):
         'remove_hydrogens': False,
         'remove_waters': False
     }
+    
+    if debug:
+        prop['remove_tmp'] = False
         
     pdb4amber_run(input_pdb_path=input_pdb,
               output_pdb_path=output_pdb_path,
@@ -30,8 +33,11 @@ def main(input_pdb, force_field, output_folder):
     
     
     prop = {
-        'forcefield': [force_field]
+        'forcefield': force_fields
     }
+
+    if debug:
+        prop['remove_tmp'] = False
     
     input_pdb = output_pdb_path
     output_pdb_path = os.path.join(output_folder, f"{Path(input_pdb).stem}_leap.pdb")
@@ -49,9 +55,10 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser("AMBER top generation")
     
     parser.add_argument("-pdb", type=str, help="Path to the PDB file")
-    parser.add_argument("-ff", type=str, help="Force field to use. Default: protein.ff14SB", default="protein.ff14SB")
+    parser.add_argument("-ff", nargs="+", help="Force fields to use", default=["leaprc.protein.ff14SB", "DNA.bsc1", "leaprc.water.tip3p", "gaff"])
     parser.add_argument("-o", type=str, help="Path to the output folder with AMBER topology files.")
+    parser.add_argument("-d", action="store_true", help="Debug mode")
     
     args = parser.parse_args()
     
-    main(input_pdb = args.pdb, force_field = args.ff, output_folder = args.o)
+    main(input_pdb = args.pdb, force_fields = args.ff, output_folder = args.o, debug = args.d)
