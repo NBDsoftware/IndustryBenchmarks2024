@@ -109,35 +109,59 @@ def get_alchemical_charge_difference(mapping) -> int:
     return chg_A - chg_B
 
 
-def get_settings():
+def get_settings(min_steps, equil_length):
     """
     Utility method for getting RFEProtocol settings for non charge changing
     transformations.
     These settings mostly follow defaults but use the newest OpenFF 2.2.
+    
+    Parameters
+    ----------
+    
+    min_steps : int
+        Number of minimization steps to perform.
+    equil_length : float
+        Length of the equilibration in ns.
     """
     # Are there additional settings we should specify here?
     settings = RelativeHybridTopologyProtocol.default_settings()
     settings.engine_settings.compute_platform = "CUDA"
     # Should we use this new OpenFF version or the default?
     settings.forcefield_settings.small_molecule_forcefield = 'openff-2.2.0'
+    # Set the number of minimization steps
+    settings.simulation_settings.minimization_steps = min_steps
+    # Set the length of the equilibration
+    settings.simulation_settings.equilibration_length = equil_length * unit.nanosecond
     # Only run one repeat per input json file
     settings.protocol_repeats = 1
     return settings
 
 
-def get_settings_charge_changes():
+def get_settings_charge_changes(min_steps, equil_length):
     """
     Utility method for getting RFEProtocol settings for charge changing
     transformations.
 
     These settings mostly follow defaults but use longer
     simulation times, more lambda windows and an alchemical ion.
+
+    Parameters
+    ----------
+    
+    min_steps : int
+        Number of minimization steps to perform.
+    equil_length : float
+        Length of the equilibration in ns.
     """
     settings = RelativeHybridTopologyProtocol.default_settings()
     settings.engine_settings.compute_platform = "CUDA"
     # Should we use this new OpenFF version or the default?
     settings.forcefield_settings.small_molecule_forcefield = 'openff-2.2.0'
     settings.alchemical_settings.explicit_charge_correction = True
+    # Set the number of minimization steps
+    settings.simulation_settings.minimization_steps = min_steps
+    # Set the length of the equilibration
+    settings.simulation_settings.equilibration_length = equil_length * unit.nanosecond
     settings.simulation_settings.production_length = 20 * unit.nanosecond
     settings.simulation_settings.n_replicas = 22
     settings.lambda_settings.lambda_windows = 22
@@ -166,12 +190,24 @@ def get_settings_charge_changes():
     help="Path to the prepared cofactors SDF file (optional)",
 )
 @click.option(
+    '--min_steps',
+    type=int,
+    default=5000,
+    help="Number of minimization steps to perform",
+)
+@click.option(
+    '--equil_length',
+    type=float,
+    default=1.0,
+    help="Length of the equilibration in ns",
+)
+@click.option(
     '--output',
     type=click.Path(dir_okay=True, file_okay=False, path_type=pathlib.Path),
     default=pathlib.Path('alchemicalNetwork'),
     help="Directory name in which to store the transformation json files",
 )
-def run_inputs(ligands, pdb, cofactors, output):
+def run_inputs(ligands, pdb, cofactors, min_steps, equil_length, output):
     """
     Generate run json files for RBFE calculations
 
@@ -183,6 +219,10 @@ def run_inputs(ligands, pdb, cofactors, output):
       A Path to a protein PDB file.
     cofactors : Optional[pathlib.Path]
       A Path to an SDF file containing the system's cofactors.
+    min_steps : int
+        Number of minimization steps to perform.
+    equil_length : float
+        Length of the equilibration in ns.
     output: pathlib.Path
       A Path to a directory where the transformation json files
       and ligand network graphml file will be stored into.
@@ -228,9 +268,9 @@ def run_inputs(ligands, pdb, cofactors, output):
                     "for 20 ns each, will be used here.")
             warnings.warn(wmsg)
             # Get settings for charge changing transformations
-            rfe_settings = get_settings_charge_changes()
+            rfe_settings = get_settings_charge_changes(min_steps, equil_length)
         else:
-            rfe_settings = get_settings()
+            rfe_settings = get_settings(min_steps, equil_length)
         for leg in ['solvent', 'complex']:
             # use the solvent and protein created above
             sysA_dict = {'ligand': mapping.componentA,
