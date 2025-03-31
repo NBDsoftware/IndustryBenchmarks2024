@@ -16,12 +16,18 @@ def parse_args():
     parser.add_argument("--output", required=False, help="Path to the output directory.")
     return parser.parse_args()
 
-def get_settings():
+def get_settings(output: str):
 
     settings = PlainMDProtocol.default_settings()
     settings.simulation_settings.equilibration_length_nvt = 1 * unit.nanosecond
     settings.simulation_settings.equilibration_length = 1 * unit.nanosecond
     settings.simulation_settings.production_length = 5 * unit.nanosecond
+    
+    # Print settings into a file
+    with open(f"{output}/settings.txt", "w") as f:
+        # Write all the settings
+        for key, value in settings.dict().items():
+            f.write(f"{key}: {value}\n")
     
     return settings
     
@@ -63,15 +69,6 @@ def run_md(dag, output):
     AssertionError
       If any of the simulation Units failed.
     """
-    # Add output directory if any
-    if output:
-        output = pathlib.Path(output)
-    else:
-        output = pathlib.Path.cwd() / "output"
-        
-    # Create the output directory if it does not exist
-    output.mkdir(parents=True, exist_ok=True)
-        
     # Run the DAG
     dagres = gufe.protocols.execute_DAG(
         dag,
@@ -88,6 +85,15 @@ def run_md(dag, output):
     
 def main():
     args = parse_args()
+    
+    # Add output directory if any
+    if args.output:
+        output = pathlib.Path(args.output)
+    else:
+        output = pathlib.Path.cwd() / "output"
+        
+    # Create the output directory if it does not exist
+    output.mkdir(parents=True, exist_ok=True)
     
     # Create components dictionary
     components_dict = {}
@@ -114,11 +120,11 @@ def main():
     system = ChemicalSystem(components_dict, name=name)
     
     # Create and execute MD simulation
-    settings = get_settings()
+    settings = get_settings(output)
     protocol = PlainMDProtocol(settings=settings)
     dag = protocol.create(stateA=system, stateB=system, mapping=None)
         
-    run_md(dag, args.output)
+    run_md(dag, output)
     
     print("MD simulation completed successfully.")
 
