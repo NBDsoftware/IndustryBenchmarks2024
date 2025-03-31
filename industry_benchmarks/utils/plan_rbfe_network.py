@@ -109,7 +109,7 @@ def get_alchemical_charge_difference(mapping) -> int:
     return chg_A - chg_B
 
 
-def get_settings(min_steps, equil_length):
+def get_settings(min_steps, equil_length, small_molecule_forcefield='openff-2.2.0', hydrogen_mass=3.0):
     """
     Utility method for getting RFEProtocol settings for non charge changing
     transformations.
@@ -122,12 +122,17 @@ def get_settings(min_steps, equil_length):
         Number of minimization steps to perform.
     equil_length : float
         Length of the equilibration in ns.
+    small_molecule_forcefield : str
+        The name of the small molecule forcefield to use.
+    hydrogen_mass : float
+        The mass of the hydrogen atoms in the system.
     """
     # Are there additional settings we should specify here?
     settings = RelativeHybridTopologyProtocol.default_settings()
     settings.engine_settings.compute_platform = "CUDA"
     # Should we use this new OpenFF version or the default?
-    settings.forcefield_settings.small_molecule_forcefield = 'openff-2.2.0'
+    settings.forcefield_settings.small_molecule_forcefield = small_molecule_forcefield
+    settings.forcefield_settings.hydrogen_mass = hydrogen_mass
     # Set the number of minimization steps
     settings.simulation_settings.minimization_steps = min_steps
     # Set the length of the equilibration
@@ -137,7 +142,7 @@ def get_settings(min_steps, equil_length):
     return settings
 
 
-def get_settings_charge_changes(min_steps, equil_length):
+def get_settings_charge_changes(min_steps, equil_length, small_molecule_forcefield='openff-2.2.0', hydrogen_mass=3.0):
     """
     Utility method for getting RFEProtocol settings for charge changing
     transformations.
@@ -152,11 +157,16 @@ def get_settings_charge_changes(min_steps, equil_length):
         Number of minimization steps to perform.
     equil_length : float
         Length of the equilibration in ns.
+    small_molecule_forcefield : str
+        The name of the small molecule forcefield to use.
+    hydrogen_mass : float
+        The mass of the hydrogen atoms in the system.
     """
     settings = RelativeHybridTopologyProtocol.default_settings()
     settings.engine_settings.compute_platform = "CUDA"
     # Should we use this new OpenFF version or the default?
-    settings.forcefield_settings.small_molecule_forcefield = 'openff-2.2.0'
+    settings.forcefield_settings.small_molecule_forcefield = small_molecule_forcefield
+    settings.forcefield_settings.hydrogen_mass = hydrogen_mass
     settings.alchemical_settings.explicit_charge_correction = True
     # Set the number of minimization steps
     settings.simulation_settings.minimization_steps = min_steps
@@ -202,12 +212,24 @@ def get_settings_charge_changes(min_steps, equil_length):
     help="Length of the equilibration in ns",
 )
 @click.option(
+    '--ligands_ff',
+    type=str,
+    default='openff-2.2.0',
+    help="The name of the small molecule forcefield to use",
+)
+@click.option(
+    '--hydrogen_mass',
+    type=float,
+    default=3.0,
+    help="The mass of the hydrogen atoms in the system",
+)
+@click.option(
     '--output',
     type=click.Path(dir_okay=True, file_okay=False, path_type=pathlib.Path),
     default=pathlib.Path('alchemicalNetwork'),
     help="Directory name in which to store the transformation json files",
 )
-def run_inputs(ligands, pdb, cofactors, min_steps, equil_length, output):
+def run_inputs(ligands, pdb, cofactors, min_steps, equil_length, ligands_ff, hydrogen_mass, output):
     """
     Generate run json files for RBFE calculations
 
@@ -223,6 +245,10 @@ def run_inputs(ligands, pdb, cofactors, min_steps, equil_length, output):
         Number of minimization steps to perform.
     equil_length : float
         Length of the equilibration in ns.
+    ligands_ff : str
+        The name of the small molecule forcefield to use.
+    hydrogen_mass : float
+        The mass of the hydrogen atoms in the system.
     output: pathlib.Path
       A Path to a directory where the transformation json files
       and ligand network graphml file will be stored into.
@@ -268,9 +294,16 @@ def run_inputs(ligands, pdb, cofactors, min_steps, equil_length, output):
                     "for 20 ns each, will be used here.")
             warnings.warn(wmsg)
             # Get settings for charge changing transformations
-            rfe_settings = get_settings_charge_changes(min_steps, equil_length)
+            rfe_settings = get_settings_charge_changes(min_steps, equil_length, ligands_ff, hydrogen_mass)
         else:
-            rfe_settings = get_settings(min_steps, equil_length)
+            rfe_settings = get_settings(min_steps, equil_length, ligands_ff, hydrogen_mass)
+            
+        # Print settings into a different file for this edge
+        with open(output / f"{mapping.componentA.name}_{mapping.componentB.name}_settings.txt", "w") as f:
+            # Write all the settings
+            for key, value in rfe_settings.dict().items():
+                f.write(f"{key}: {value}\n")
+                
         for leg in ['solvent', 'complex']:
             # use the solvent and protein created above
             sysA_dict = {'ligand': mapping.componentA,
