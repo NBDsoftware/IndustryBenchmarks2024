@@ -117,33 +117,16 @@ def get_dg(
 
 @click.command
 @click.option(
-    "--results_0",
+    "--results_path",
     type=click.Path(dir_okay=True, file_okay=False, path_type=pathlib.Path),
-    default=pathlib.Path("results_0"),
+    default=[pathlib.Path("results_0")],
+    multiple=True,
     required=True,
     help=(
-        "Path to the directory that contains all result json files "
-        "for repeat 0, default: results_0."
-    ),
-)
-@click.option(
-    "--results_1",
-    type=click.Path(dir_okay=True, file_okay=False, path_type=pathlib.Path),
-    default=pathlib.Path("results_1"),
-    required=True,
-    help=(
-        "Path to the directory that contains all result json files "
-        "for repeat 1, default: results_1."
-    ),
-)
-@click.option(
-    "--results_2",
-    type=click.Path(dir_okay=True, file_okay=False, path_type=pathlib.Path),
-    default=pathlib.Path("results_2"),
-    required=True,
-    help=(
-        "Path to the directory that contains all result json files "
-        "for repeat 2, default: results_2."
+        "Path to the directory that contains all result json files."
+        "Several directories can be passed in, one for each replica. "
+        "The directories should contain the results of the same set of "
+        "transformations. "
     ),
 )
 @click.option(
@@ -176,12 +159,9 @@ def get_dg(
          "The output contains ligand names, the MLE derived DG [kcal/mol] "
          "values and associated uncertainties. Default: dg.tsv.",
 )
-def extract(results_0, results_1, results_2, input_ligand_network_file, output, output_DG):
-    files_0 = glob.glob(f"{results_0}/*.json")
-    files_1 = glob.glob(f"{results_1}/*.json")
-    files_2 = glob.glob(f"{results_2}/*.json")
+def extract(results_path, input_ligand_network_file, output, output_DG):
 
-    list_of_files = [files_0, files_1, files_2]
+    list_of_files = [glob.glob(f"{path}/*.json") for path in results_path]
 
     # Loading in the input ligand network to check if there are
     # edges that don't have a results .json file
@@ -334,29 +314,37 @@ def extract(results_0, results_1, results_2, input_ligand_network_file, output, 
 
 
     # Check if there are .json files in the provided folders
-    if len(files_0) == 0 or len(files_1) == 0 or len(files_2) == 0:
-        errmsg = (
-            "No .json files found in at least one of the results folders"
-            ". Please check your specified file paths. Got folder names:"
-            f" {results_0}, {results_1}, {results_2}."
-        )
-        raise ValueError(errmsg)
+    for files in list_of_files:
+        if len(files) == 0:
+            errmsg = (
+                "No .json files found in at least one of the results folders"
+                ". Please check your specified file paths. Got folder names:"
+                f" {results}."
+            )
+            raise ValueError(errmsg)
 
-    else:
-        click.echo("All simulations finished successfully!")
+        else:
+            click.echo("All simulations finished successfully!")
     click.echo("=" * 80)
 
     # Start extracting results
     click.echo("Start extracting results")
     edges_dict = dict()
-    for file in files_0:
+    # For each transformation
+    for file in list_of_files[0]:
         click.echo(f"Reading file {file}")
         json_0 = load_results(file)
+        
+        filename = file.split("/")[-1]
+        
+        # Get the transformation type
         try:
             runtype = get_type(json_0)
         except KeyError:
             click.echo("Guessing run type from file path")
             runtype = get_type_from_file_path(json_0)
+        
+        # Get the ligand names
         try:
             molA, molB = get_names(json_0)
         except (KeyError, IndexError):
@@ -365,17 +353,18 @@ def extract(results_0, results_1, results_2, input_ligand_network_file, output, 
                 molA, molB = get_names_from_unit_results(json_0)
             except (KeyError, IndexError):
                 raise ValueError("Failed to guess names")
+            
         edge_name = f"edge_{molA}_{molB}"
+        
         dg_0 = json_0["estimate"].m
-        file_1 = results_1 / file.split("/")[-1]
-        file_2 = results_2 / file.split("/")[-1]
-        click.echo(f"Reading file {file_1}")
-        json_1 = load_results(file_1)
-        click.echo(f"Reading file {file_2}")
-        json_2 = load_results(file_2)
-        dg_1 = json_1["estimate"].m
-        dg_2 = json_2["estimate"].m
-        dgs = [dg_0, dg_1, dg_2]
+        dgs = [dg_0]
+        # Gather all results for this transformation
+        for path in results_path[1:]:
+            other_file = f"{path}/{filename}"
+            click.echo(f"Reading file {other_file}")
+            other_json = load_results(other_file)
+            dgs.append(other_json["estimate"].m)
+
         dg = np.mean(dgs)
         std = np.std(dgs)
         if edge_name not in edges_dict:
