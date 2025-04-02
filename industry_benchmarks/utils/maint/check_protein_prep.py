@@ -57,6 +57,7 @@ def run(prepared, original):
                 print("Residue in original structure had alternative locations!")
             
         else:
+            print("Number of atoms match")
             # Number of atoms match, check if the order of the elements match
             try:
                 same_order = all([a1.element == a2.element for a1, a2 in zip(resi.atoms, resj.atoms)])
