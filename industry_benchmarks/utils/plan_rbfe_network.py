@@ -46,15 +46,19 @@ def gen_charges(smc):
     return openfe.SmallMoleculeComponent.from_openff(offmol)
 
 
-def gen_ligand_network(smcs):
+def gen_ligand_network(smcs, atom_mapper='kartograf', max_3d=0.95):
     """
-    Creates the Lomap ligand network using the KartografAtomMapper and
-    the Lomap scorer.
+    Creates the Lomap ligand network using an atom mapper 
+    (by default the KartografAtomMapper) and the Lomap scorer.
 
     Parameters
     ----------
     smcs : list[SmallMoleculeComponents]
       List of SmallMoleculeComponents of the ligands.
+    atom_mapper : str
+      The atom mapper to use for the ligand network generation.
+    max_3d : float
+        The maximum distance between 3D coordinates to map atoms.
 
     Returns
     -------
@@ -67,10 +71,23 @@ def gen_ligand_network(smcs):
         filter_ringsize_changes,  # default
         filter_whole_rings_only,  # default
     ]
-    mapper = kartograf.KartografAtomMapper(
-        atom_map_hydrogens=True,
-        additional_mapping_filter_functions=mapping_filters,
-    )
+    
+    if atom_mapper == 'kartograf':
+        print("INFO: Using Kartograf as the atom mapper")
+        mapper = kartograf.KartografAtomMapper(
+            atom_max_distance=max_3d,
+            atom_map_hydrogens=True,
+            additional_mapping_filter_functions=mapping_filters,
+        )
+    elif atom_mapper == 'lomap':
+        print("INFO: Using Lomap as the atom mapper")
+        mapper = openfe.LomapAtomMapper(
+            max3d = max_3d, 
+            element_change = True
+        )
+    else:
+        raise ValueError(f"Unknown atom mapper: {atom_mapper}. Please use 'kartograf' or 'lomap'.")
+    
     # TODO: Change this after LOMAP PR gets merged
     # scorer = openfe.lomap_scorers.default_lomap_score
     scorer = partial(openfe.lomap_scorers.default_lomap_score, charge_changes_score=0.1)
@@ -224,12 +241,24 @@ def get_settings_charge_changes(min_steps, equil_length, small_molecule_forcefie
     help="The mass of the hydrogen atoms in the system",
 )
 @click.option(
+    '--atom_mapper', 
+    type=click.Choice(['lomap', 'kartograf']),
+    default='kartograf',
+    help="The atom mapper to use for the ligand network generation",
+)
+@click.option(
+    '--max_3d',
+    type=float,
+    default=0.95,
+    help="The maximum distance between 3D coordinates to map atoms",
+)
+@click.option(
     '--output',
     type=click.Path(dir_okay=True, file_okay=False, path_type=pathlib.Path),
     default=pathlib.Path('alchemicalNetwork'),
     help="Directory name in which to store the transformation json files",
 )
-def run_inputs(ligands, pdb, cofactors, min_steps, equil_length, ligands_ff, hydrogen_mass, output):
+def run_inputs(ligands, pdb, cofactors, min_steps, equil_length, ligands_ff, hydrogen_mass, atom_mapper, max_3d, output):
     """
     Generate run json files for RBFE calculations
 
@@ -249,6 +278,8 @@ def run_inputs(ligands, pdb, cofactors, min_steps, equil_length, ligands_ff, hyd
         The name of the small molecule forcefield to use.
     hydrogen_mass : float
         The mass of the hydrogen atoms in the system.
+    atom_mapper : str
+        The atom mapper to use for the ligand network generation.
     output: pathlib.Path
       A Path to a directory where the transformation json files
       and ligand network graphml file will be stored into.
@@ -264,7 +295,7 @@ def run_inputs(ligands, pdb, cofactors, min_steps, equil_length, ligands_ff, hyd
     smcs = [gen_charges(smc) for smc in smcs]
 
     # Create ligand network
-    ligand_network = gen_ligand_network(smcs)
+    ligand_network = gen_ligand_network(smcs, atom_mapper=atom_mapper, max_3d=max_3d)
 
     # Store the ligand network as a graphml file
     with open(output / "ligand_network.graphml", mode='w') as f:
